@@ -73,6 +73,7 @@ The structure of the encrypted File is:
     [footer]
 
 header:
+
     00 - 01  magic bytes (0x44 0x43)
     02 - 03  header version  (0x00 0x01)
     04 - 27  generated (random) 24-byte nonce base for this file
@@ -80,6 +81,7 @@ header:
     44 - 63  zeros (ignored)
 
 footer:
+
     00 - 01  magic bytes (0x44 0x44)
     02 - 03  footer version (0x00 0x01)
     04 - 11  number of data blocks (8 byte ulong)
@@ -87,6 +89,7 @@ footer:
     44 - 63  zeroes (ignored)
 
 data block:
+
     00 - 24  nonce
     24 - 28  size of plaintext data in chunk
     28 - 4k  ciphertext including trailing poly1305 tag (16 bytes)
