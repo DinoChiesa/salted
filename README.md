@@ -27,6 +27,18 @@ To encrypt:
 
 ```
 
+The output will be placed in <filename>.salted.  For the above, `whatever.txt.salted`
+
+To decrypt:
+
+```
+./salt_file -filename whatever.txt.salted  -passphrase "passphrase goes here"
+
+```
+
+The output will be placed in <filename>.decrypted.  For the above, `whatever.txt.salted.decrypted`
+
+
 ## Details
 
 This class uses secretbox for the storage.
@@ -88,4 +100,4 @@ data block:
 
 * The passphrase is always and only accepted as a command-line option.  No silent input is possible.
 
-
+* The handling of filename is naive.
