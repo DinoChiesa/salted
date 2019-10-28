@@ -25,8 +25,8 @@ const (
 type EncryptedFile struct {
   hmacsha256 hash.Hash
   sourceFilename string
-  EncryptedFilename string
-  DecryptedFilename string
+  OutputFilename string
+  InputFilename string
   infile *os.File
   outfile *os.File
   NumChunks int64
@@ -44,9 +44,10 @@ func randomBytes(len int) ([]byte) {
   return bytes
 }
 
-func New(sourceFilename string, passphrase string, verbose bool) *EncryptedFile {
+func ReadAndEncrypt(sourceFilename string, destFilename string, passphrase string, verbose bool) (*EncryptedFile, error) {
   ef := new(EncryptedFile)
-  ef.sourceFilename = sourceFilename
+  ef.InputFilename = sourceFilename
+  ef.OutputFilename = destFilename
   ef.NumChunks = 0
   ef.Verbose = verbose
 
@@ -72,22 +73,46 @@ func New(sourceFilename string, passphrase string, verbose bool) *EncryptedFile 
   ef.hmacsha256 = hmac.New(sha256.New, signingKey[:])
   // h.Write([]byte(message))
   // return base64.StdEncoding.EncodeToString(h.Sum(nil))
-  return ef
+  return ef, ef.encrypt()
 }
 
-func Read(sourceFilename string, passphrase string, verbose bool) (*EncryptedFile, error) {
+
+func DeriveOutputFilename(sourceFilename string, decrypt bool) (string) {
+  if decrypt {
+		if sourceFilename == "-" {
+			return "out.decrypted"
+		} else {
+			return sourceFilename + ".decrypted"
+		}
+	}	else {
+    fmt.Printf("deriving name for Encrypt...\n")
+		if sourceFilename == "-" {
+			return "out.salted"
+		} else {
+			return sourceFilename + ".salted"
+		}
+	}
+}
+
+func ReadAndDecrypt(sourceFilename string, destFilename string, passphrase string, verbose bool) (*EncryptedFile, error) {
   ef := new(EncryptedFile)
-  ef.sourceFilename = sourceFilename
+  ef.InputFilename = sourceFilename
+  ef.OutputFilename = destFilename
   ef.NumChunks = 0
   ef.Verbose = verbose
-  encryptedFile, e := os.Open(ef.sourceFilename)
-  if e != nil {
-    return nil, e
-  }
-  defer encryptedFile.Close()
+	
+ 	if ef.InputFilename == "-" {
+		ef.infile = os.Stdin
+	}	else {
+		encryptedFile, e := os.Open(ef.InputFilename)
+		if e != nil {
+			return nil, e
+		}
+		defer encryptedFile.Close()
+		ef.infile = encryptedFile
+	}
 
-  ef.infile = encryptedFile
-  e = ef.readHeader()
+  e := ef.readHeader()
   if e != nil {
     return ef, e
   }
@@ -107,13 +132,16 @@ func Read(sourceFilename string, passphrase string, verbose bool) (*EncryptedFil
   ef.encryptionKey = encryptionKey
   ef.hmacsha256 = hmac.New(sha256.New, signingKey[:])
 
-  ef.DecryptedFilename = sourceFilename + ".decrypted"
-  decryptedFile, e := os.Create(ef.DecryptedFilename)
-  if e != nil {
-    return ef, e
-  }
-  defer decryptedFile.Close()
-  ef.outfile = decryptedFile
+ 	if ef.OutputFilename == "-" {
+		ef.outfile = os.Stdout
+	}	else {
+		decryptedFile, e := os.Create(ef.OutputFilename)
+		if e != nil {
+			return ef, e
+		}
+		defer decryptedFile.Close()
+		ef.outfile = decryptedFile
+	}
 
   footer, e := ef.readAndDecryptChunks()
   if e != nil {
@@ -243,6 +271,7 @@ func (ef *EncryptedFile) WriteHeader() {
 
   // magic number and version number
   magicAndVersion := []byte{ 0x44, 0x43, 0x00, 0x01 }
+	
   _, e := ef.outfile.Write(magicAndVersion)
   if e != nil {
     fmt.Printf("writing magic, error:\n%#v\n", e)
@@ -379,23 +408,32 @@ func zero(a []byte) {
   }
 }
 
-func (ef *EncryptedFile) Encrypt() error {
-  plaintextFile, e := os.Open(ef.sourceFilename)
-  if e != nil {
-    fmt.Println(e)
-    return e
-  }
-  defer plaintextFile.Close()
-  ef.infile = plaintextFile
+func (ef *EncryptedFile) encrypt() error {
 
-  ef.EncryptedFilename = ef.sourceFilename + ".salted"
-  ciphertextFile, e := os.Create(ef.EncryptedFilename)
-  if e != nil {
-    fmt.Printf("while creating ciphertext file, error:\n%#v\n", e)
-    return e
-  }
-  defer ciphertextFile.Close()
-  ef.outfile = ciphertextFile
+ 	if ef.InputFilename == "-" {
+		ef.infile = os.Stdin
+	}	else {
+		plaintextFile, e := os.Open(ef.InputFilename)
+		if e != nil {
+			fmt.Println(e)
+			return e
+		}
+		defer plaintextFile.Close()
+		ef.infile = plaintextFile
+	}
+ 
+ 	if ef.OutputFilename == "-" {
+		ef.outfile = os.Stdout
+	} else {
+		fmt.Printf("creating ciphertext file...(%s)\n", ef.OutputFilename)
+		ciphertextFile, e := os.Create(ef.OutputFilename)
+		if e != nil {
+			fmt.Printf("while creating ciphertext file, error:\n%#v\n", e)
+			return e
+		}
+		defer ciphertextFile.Close()
+		ef.outfile = ciphertextFile
+	}
 
   ef.WriteHeader()
 
@@ -407,11 +445,11 @@ func (ef *EncryptedFile) Encrypt() error {
   var chunkNumber int64 = 0
   for {
     zero(chunk)
-    nbytes, e := plaintextFile.Read(chunk)
+    nbytes, e := ef.infile.Read(chunk)
 
     if e != nil {
       if e != io.EOF {
-        fmt.Println(e)
+        fmt.Printf("while reading plaintext file, error:\n%#v\n", e)
       }
       break
     }
@@ -419,7 +457,7 @@ func (ef *EncryptedFile) Encrypt() error {
     encrypted := ef.encryptChunk(chunk, nbytes, chunkNumber)
     // len(encrypted) == ChunkSize
     ef.hmacsha256.Write(encrypted)
-    _, e = ciphertextFile.Write(encrypted)
+    _, e = ef.outfile.Write(encrypted)
     if e != nil {
       fmt.Printf("writing chunk %d, error:\n%#v\n", chunkNumber, e)
       return e

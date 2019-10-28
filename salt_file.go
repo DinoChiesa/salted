@@ -2,45 +2,58 @@ package main
 
 import (
   "fmt"
-  "strings" 
   "flag"
 	"github.com/DinoChiesa/salted/lib"
 )
 
 
 func usage() {
-  fmt.Printf("salt_file -filename something -passphrase 'I love APIs'\n\n")
+  fmt.Printf("salt_file -in infilename -passphrase 'I love APIs' [-decrypt] [-out outfilename]\n\n")
 }
 
 func main() {
   var passphrase string // = "some passphrase"
-  var filename string  // = "encrypt_file.go"
+  var infilename string  // example:  data.txt
+  var outfilename string  // example:  data.txt.salted
 
-  boolPtr := flag.Bool("verbose", false, "")
-  filenamePtr := flag.String("filename", "", "name of file to encrypt")
+  verbosePtr := flag.Bool("verbose", false, "")
+  decryptPtr := flag.Bool("decrypt", false, "decrypt rather than encrypt")
+  infilePtr := flag.String("in", "", "name of file to read to encrypt or decrypt")
   passphrasePtr := flag.String("passphrase", "", "string passphrase")
+  outfilePtr := flag.String("out", "", "output file")
   flag.Parse()
 
-  if *filenamePtr == "" || *passphrasePtr == "" {
+  if *infilePtr == "" || *passphrasePtr == "" {
     usage()
     return
   }
 
-  filename = *filenamePtr
+  infilename = *infilePtr
   passphrase = *passphrasePtr
 
-  if strings.HasSuffix(filename, "salted") {
-    ef, e := lib.Read(filename, passphrase, *boolPtr)
-    if e != nil {
-      fmt.Println(e)
-      return
-    }
-    fmt.Printf("decrypted chunks: %d\n", ef.NumChunks)
-    fmt.Printf("output file: %s\n", ef.DecryptedFilename)
+  if *outfilePtr == "" {
+		// select a default output filename based on the desired action
+		outfilename = lib.DeriveOutputFilename(infilename, *decryptPtr)
+		if *verbosePtr {
+			fmt.Printf("using output file: %s\n", outfilename)
+		}
   } else {
-    ef := lib.New(filename, passphrase, *boolPtr)
-    ef.Encrypt()
-    fmt.Printf("encrypted chunks: %d\n", ef.NumChunks)
-    fmt.Printf("output file: %s\n", ef.EncryptedFilename)
+		outfilename = *outfilePtr
+	}
+
+	var ef *lib.EncryptedFile
+	var e error
+  if *decryptPtr {
+    ef, e = lib.ReadAndDecrypt(infilename, outfilename, passphrase, *verbosePtr)
+  } else {
+    ef, e = lib.ReadAndEncrypt(infilename, outfilename, passphrase, *verbosePtr)
   }
+  if e != nil {
+		fmt.Println(e)
+		return
+	}
+	if *verbosePtr {
+		fmt.Printf("number of chunks: %d\n", ef.NumChunks)
+		fmt.Printf("output file: %s\n", ef.OutputFilename)
+	}
 }

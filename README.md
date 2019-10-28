@@ -23,20 +23,48 @@ go build salt_file.go
 To encrypt:
 
 ```
-./salt_file -filename whatever.txt  -passphrase "passphrase goes here"
+./salt_file -in whatever.txt  -passphrase "passphrase goes here"
 
 ```
 
-The output will be placed in <filename>.salted.  For the above, `whatever.txt.salted`
+The output will be placed in <filename>.salted.  For the above,
+`whatever.txt.salted`. You can specify the output file with the `-out` option.
+
+```
+./salt_file -in myfile.txt  -passphrase "passphrase goes here" -out myfile.salted
+
+```
+
+If you specify `-in -` the tool will read from Stdin:
+
+```
+cat myfile.txt | salt_file -in -  -passphrase "passphrase goes here" -out myfile.salted
+
+```
+
+And with `-out -`, the tool can write to Stdout:
+
+```
+cat myfile.txt | salt_file -in -  -passphrase "passphrase goes here" -out - > ./myfile.salted
+
+```
+
 
 To decrypt:
 
 ```
-./salt_file -filename whatever.txt.salted  -passphrase "passphrase goes here"
+./salt_file -in whatever.txt.salted  -passphrase "passphrase goes here" -decrypt
 
 ```
 
-The output will be placed in <filename>.decrypted.  For the above, `whatever.txt.salted.decrypted`
+The output will be placed in <filename>.decrypted.  For the above,
+`whatever.txt.salted.decrypted`. Again, you can specify the `-out` option for an
+output file.
+
+```
+./salt_file -in file1.txt.salted  -passphrase "passphrase goes here" -decrypt -out file1.txt
+
+```
 
 
 ## Details
@@ -97,15 +125,14 @@ data block:
 
 ## Bugs
 
-* The encrypter always rounds up the size of the output to the nearest 4k boundary.
+* The encrypter always rounds up the size of the output to the nearest 4k
+  boundary. It's not very space-efficient for smaller files.
 
 * This has not been tested with very large files.
 
-* The passphrase is always and only accepted as a command-line option.  No silent input is possible.
+* The passphrase is always and only accepted as a command-line option. No
+  silent input is possible.
 
 * The handling of filename is naive.
-
-* there is no option to direct the encrypted or decrypted data to stdout; there
-  is no option to accept input from stdin
 
 * There's no option to compress the data.
