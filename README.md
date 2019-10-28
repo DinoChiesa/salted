@@ -104,3 +104,8 @@ data block:
 * The passphrase is always and only accepted as a command-line option.  No silent input is possible.
 
 * The handling of filename is naive.
+
+* there is no option to direct the encrypted or decrypted data to stdout; there
+  is no option to accept input from stdin
+
+* There's no option to compress the data.
