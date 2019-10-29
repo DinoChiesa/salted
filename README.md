@@ -123,10 +123,16 @@ data block:
     28 - 4k  ciphertext including trailing poly1305 tag (16 bytes)
 
 
+## Extras
+
+There's [an emacs generic mode](./salted.el) for opening and editing salted files.
+Kinda like epa for PGP-encrypted files.
+
 ## Bugs
 
 * The encrypter always rounds up the size of the output to the nearest 4k
-  boundary. It's not very space-efficient for smaller files.
+  boundary. It's not very space-efficient for smaller files. There's no way
+  to modify this block size.
 
 * This has not been tested with very large files.
 
