@@ -11,7 +11,9 @@ alternative to PGP for encrypting files.
 
 ## Building
 
-You need to build the tool before using it.
+You need to build the tool before using it. To do that, you need to install Go v1.16 or later. Get help on that [here](https://go.dev/doc/install).
+
+Then,
 
 ```
 go build salt_file.go
