@@ -161,8 +161,10 @@ Kinda like epa for PGP-encrypted files.
 
 * This has not been tested with very large files.
 
-* There is no way to specify the argon2 parameters for key generation. They're fixed at
-  the RFC 9106 recommendation.
+* When encrypting, there is no way to specify the argon2 parameters for key
+  generation. They're fixed at the RFC 9106 recommendation.
+
+* When decrypting, the tool does not check the argon2 parameters for sanity.
 
 * There's no option to compress the data before encrypting.
 
