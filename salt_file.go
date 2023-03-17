@@ -3,12 +3,14 @@ package main
 import (
   "fmt"
   "flag"
+	"syscall"
 	"github.com/DinoChiesa/salted/lib"
+	"golang.org/x/term"
 )
 
 
 func usage() {
-  fmt.Printf("salt_file -in infilename -passphrase 'I love APIs' [-decrypt] [-out outfilename]\n\n")
+  fmt.Printf("salt_file -in infilename [-passphrase 'passphrase here'] [-decrypt] [-out outfilename]\n\n")
 }
 
 func main() {
@@ -23,13 +25,24 @@ func main() {
   outfilePtr := flag.String("out", "", "output file")
   flag.Parse()
 
-  if *infilePtr == "" || *passphrasePtr == "" {
+  if *infilePtr == "" {
     usage()
     return
   }
-
   infilename = *infilePtr
-  passphrase = *passphrasePtr
+
+  if *passphrasePtr == "" {
+		// read from terminal without echo
+		fmt.Print("Passphrase: ")
+    bytepw, err := term.ReadPassword(int(syscall.Stdin))
+    if err != nil {
+			return
+		}
+		passphrase = string(bytepw)
+		fmt.Print("\n")
+  }	else {
+		passphrase = *passphrasePtr
+	}
 
   if *outfilePtr == "" {
 		// select a default output filename based on the desired action

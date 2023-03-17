@@ -22,6 +22,12 @@ const (
   HeaderSize = 64
 )
 
+type Argon2Params struct {
+	timeCost	uint32
+	memoryCost uint32 // kibibytes
+	lanes 	  uint8
+}
+
 type EncryptedFile struct {
   hmacsha256 hash.Hash
   sourceFilename string
@@ -36,6 +42,7 @@ type EncryptedFile struct {
   encryptionKey [32]byte
   signingKey [32]byte
   Verbose bool
+	argon2params Argon2Params
 }
 
 func randomBytes(len int) ([]byte) {
@@ -51,6 +58,13 @@ func ReadAndEncrypt(sourceFilename string, destFilename string, passphrase strin
   ef.NumChunks = 0
   ef.Verbose = verbose
 
+	ef.argon2params = Argon2Params {
+		// as per recommendations in RFC 9106
+		timeCost: 1,
+		memoryCost: 2048*1024,
+		lanes: 4,
+	}
+
   rand.Seed(time.Now().UnixNano())
   copy(ef.nonceBase[:], randomBytes(24))
   if ef.Verbose {
@@ -62,7 +76,7 @@ func ReadAndEncrypt(sourceFilename string, destFilename string, passphrase strin
   if ef.Verbose {
     fmt.Printf("salt: [% x]\n", ef.salt)
   }
-  encryptionKey, signingKey := generateKeys(passphrase, ef.salt)
+  encryptionKey, signingKey := generateKeys(ef.argon2params, passphrase, ef.salt)
   ef.encryptionKey = encryptionKey
 
   if ef.Verbose {
@@ -100,7 +114,7 @@ func ReadAndDecrypt(sourceFilename string, destFilename string, passphrase strin
   ef.OutputFilename = destFilename
   ef.NumChunks = 0
   ef.Verbose = verbose
-	
+
  	if ef.InputFilename == "-" {
 		ef.infile = os.Stdin
 	}	else {
@@ -122,7 +136,7 @@ func ReadAndDecrypt(sourceFilename string, destFilename string, passphrase strin
   }
   copy(ef.currentNonce[:], ef.nonceBase[:])
 
-  encryptionKey, signingKey := generateKeys(passphrase, ef.salt)
+  encryptionKey, signingKey := generateKeys(ef.argon2params, passphrase, ef.salt)
 
   if ef.Verbose {
     fmt.Printf("key1: [% x]\n", encryptionKey)
@@ -175,13 +189,15 @@ func ReadAndDecrypt(sourceFilename string, destFilename string, passphrase strin
   return ef, nil
 }
 
-func generateKeys(passphrase string, salt [16]byte) ([32]byte, [32]byte) {
-  //fmt.Printf("Generating a key via Argon2 with salted password....\n")
-  var timeCost uint32 = 1
-  var memoryCostInMegabytes uint32 = 64*1024
-  var threads uint8 = 4
+func generateKeys(params Argon2Params, passphrase string, salt [16]byte) ([32]byte, [32]byte) {
+  // var timeCost uint32 = 1
+  // var threads uint8 = 4
+  // var memoryCostInKibibytes uint32 = 2048*1024 // 2 GiB
   var desiredKeyBits uint32 = 64
-  key := argon2.IDKey([]byte(passphrase), salt[:], timeCost, memoryCostInMegabytes, threads, desiredKeyBits)
+  key := argon2.IDKey([]byte(passphrase), salt[:],
+		params.timeCost,
+		params.memoryCost,
+		params.lanes, desiredKeyBits)
   var key1 [32]byte
   copy(key1[:], key[:32])
   var key2 [32]byte
@@ -199,26 +215,69 @@ func (ef *EncryptedFile) readHeader() (error) {
     return e
   }
 
-  // magic number and version number
-  magicAndVersion := headerchunk[:4]
-  expected := []byte{ 0x44, 0x43, 0x00, 0x01 }
-  if bytes.Compare(magicAndVersion, expected) != 0 {
-    return errors.New("invalid magic number or version")
+  // magic number
+  magic := headerchunk[0:2]
+  expected := []byte{ 0x44, 0x43 }
+  if bytes.Compare(magic, expected) != 0 {
+    return errors.New("invalid magic number")
   }
 
-  // 24-byte nonce base for this file
-  copy(ef.nonceBase[:], headerchunk[4:28])
+  // check version number
+  assertedVersion := headerchunk[2:4]
+  version1bytes := []byte{0x00, 0x01 }
+  version2bytes := []byte{0x00, 0x02 }
+  if bytes.Compare(assertedVersion, version1bytes) == 0 {
+		if ef.Verbose {
+			fmt.Printf("version 1 header\n", ef.nonceBase)
+		}
+		// 24-byte nonce base for this file
+		copy(ef.nonceBase[:], headerchunk[4:28])
 
-  // 28 - 43  16-bytes of salt for the crypto key generation
-  copy(ef.salt[:], headerchunk[28:44])
+		// 28 - 43  16-bytes of salt for the crypto key generation
+		copy(ef.salt[:], headerchunk[28:44])
 
-  // zero padding to 64 bytes
-  expected = make([]byte, 20)
-  zeros := headerchunk[44:]
-  if bytes.Compare(zeros, expected) != 0 {
-    return errors.New("corrupted header")
+		// zero padding to 64 bytes
+		expected = make([]byte, 20)
+		zeros := headerchunk[44:]
+		if bytes.Compare(zeros, expected) != 0 {
+			return errors.New("corrupted v1 header")
+		}
+
+		ef.argon2params = Argon2Params {
+			timeCost: 1,
+			memoryCost: 64*1024,
+			lanes: 4,
+		}
+		return nil
+
+  } else if bytes.Compare(assertedVersion, version2bytes) == 0 {
+		if ef.Verbose {
+			fmt.Printf("version 2 header\n", ef.nonceBase)
+		}
+		// 24-byte nonce base for this file
+		copy(ef.nonceBase[:], headerchunk[4:28])
+
+		// 28 - 43  16-bytes of salt for the crypto key generation
+		copy(ef.salt[:], headerchunk[28:44])
+
+		// read argon params
+		ef.argon2params = Argon2Params {
+			timeCost: binary.LittleEndian.Uint32(headerchunk[44:]),
+			memoryCost: binary.LittleEndian.Uint32(headerchunk[48:]),
+			lanes: headerchunk[52],
+		}
+
+		// zero padding to 64 bytes
+		expected = make([]byte, 11)
+		zeros := headerchunk[53:]
+		if bytes.Compare(zeros, expected) != 0 {
+			return errors.New("corrupted v2 header")
+		}
+		return nil
+
+	} else	{
+    return errors.New(fmt.Sprintf("invalid version number [% x]", assertedVersion))
   }
-  return nil
 }
 
 
@@ -269,9 +328,9 @@ func (ef *EncryptedFile) readAndDecryptChunks() ([]byte,error) {
 
 func (ef *EncryptedFile) WriteHeader() {
 
-  // magic number and version number
-  magicAndVersion := []byte{ 0x44, 0x43, 0x00, 0x01 }
-	
+  // magic number and version number (currently always v2)
+  magicAndVersion := []byte{ 0x44, 0x43, 0x00, 0x02 }
+
   _, e := ef.outfile.Write(magicAndVersion)
   if e != nil {
     fmt.Printf("writing magic, error:\n%#v\n", e)
@@ -292,8 +351,33 @@ func (ef *EncryptedFile) WriteHeader() {
     return
   }
 
+  // 44 - 47  4-bytes of time cost for argon2
+	b := make([]byte, 4)
+	binary.LittleEndian.PutUint32(b[0:], ef.argon2params.timeCost)
+  _, e = ef.outfile.Write(b[:])
+  if e != nil {
+    fmt.Printf("writing time cost, error:\n%#v\n", e)
+    return
+  }
+
+  // 48 - 52  4-bytes of memory cost for argon2
+	binary.LittleEndian.PutUint32(b[0:], ef.argon2params.memoryCost)
+  _, e = ef.outfile.Write(b[:])
+  if e != nil {
+    fmt.Printf("writing memory cost, error:\n%#v\n", e)
+    return
+  }
+
+  // 53  1-byte of lanes/threads
+  lanes := []byte{ ef.argon2params.lanes }
+  _, e = ef.outfile.Write(lanes[:])
+  if e != nil {
+    fmt.Printf("writing lanes, error:\n%#v\n", e)
+    return
+  }
+
   // zero padding to 64 bytes
-  zeros := make([]byte, 20)
+  zeros := make([]byte, 11)
   _, e = ef.outfile.Write(zeros)
   if e != nil {
     fmt.Printf("writing zeros, error:\n%#v\n", e)
@@ -421,7 +505,7 @@ func (ef *EncryptedFile) encrypt() error {
 		defer plaintextFile.Close()
 		ef.infile = plaintextFile
 	}
- 
+
  	if ef.OutputFilename == "-" {
 		ef.outfile = os.Stdout
 	} else {

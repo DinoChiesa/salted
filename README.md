@@ -16,16 +16,25 @@ You need to build the tool before using it. To do that, you need to install Go v
 Then,
 
 ```
-go build salt_file.go
+go build  salt_file.go
 
 ```
+
+You should get an executable for your platform.
 
 ## Using the tool
 
 To encrypt:
 
+On a *nix system:
 ```
 ./salt_file -in whatever.txt  -passphrase "passphrase goes here"
+
+```
+
+On a Windows system:
+```
+.\salt_file.exe -in whatever.txt  -passphrase "passphrase goes here"
 
 ```
 
@@ -68,20 +77,23 @@ output file.
 
 ```
 
+If you omit the `-passphrase`  option, you will be prompted at the terminal.
+
 
 ## Details
 
-This class uses secretbox for the storage.
-It generates keys from passphrases using Argon2id.
+This tool uses [secretbox](https://pkg.go.dev/golang.org/x/crypto/nacl/secretbox) for the storage. Secretbox uses XSalsa20 and Poly1305 to encrypt and authenticate messages with secret-key cryptography.
+
+The tool generates secret keys from passphrases using Argon2id via the [argon2](https://pkg.go.dev/golang.org/x/crypto/argon2#pkg-overview) package, which implements Argon2 as described in [IETF RFC 9106](https://datatracker.ietf.org/doc/html/rfc9106).
 
 When encrypting:
 
 * It encrypts in ~4k blocks, and adds a header and footer block to the encrypted output file .
 * It randomly generates a nonce base for each file, and a salt for generating keys
-* it uses one generated key for encryption, and another for hmac-sha256
+* it uses one generated key for encryption, and another for HMAC-SHA256
 * encrypts each block with a sequentially incremented nonce
-* sums the encrypted text into the hmac
-* the final Hmac sha256 is stored in the footer
+* sums the encrypted text into the HMAC
+* the final HMAC SHA256 is stored in the footer
 
 When decrypting:
 
@@ -89,7 +101,7 @@ When decrypting:
 * uses a sequential nonce for each block
 * generates keys from the salt and provided passphrase
 * decrypts each block and checks the size of the block, and the nonce used
-* verifies the hmac
+* verifies the HMAC
 
 ## Structure of Encrypted File
 
@@ -102,27 +114,38 @@ The structure of the encrypted File is:
     [data block n]
     [footer]
 
-header:
+header v1:
 
     00 - 01  magic bytes (0x44 0x43)
     02 - 03  header version  (0x00 0x01)
     04 - 27  generated (random) 24-byte nonce base for this file
     28 - 43  16-bytes of salt for the crypto (random)
-    44 - 63  zeros (ignored)
+    44 - 63  zeros (20 bytes, must be zero, though not used)
+
+header v2:
+
+    00 - 01  magic bytes (0x44 0x43)
+    02 - 03  header version  (0x00 0x02)
+    04 - 27  generated (random) 24-byte nonce base for this file
+    28 - 43  16-bytes of salt for the crypto (random)
+    44 - 47  argon2 time cost (4 bytes)
+    48 - 51  argon2 memory cost (4 bytes)
+    52 - 52  argon2 lanes/threads (1 byte)
+    53 - 63  zeros (11 bytes, must be zero, though not used)
 
 footer:
 
     00 - 01  magic bytes (0x44 0x44)
     02 - 03  footer version (0x00 0x01)
     04 - 11  number of data blocks (8 byte ulong)
-    12 - 43  32 byte hmac-sha256 signature of header and all data blocks
+    12 - 43  32 byte HMAC-SHA256 signature of header and all data blocks
     44 - 63  zeroes (ignored)
 
 data block:
 
     00 - 24  nonce
     24 - 28  size of plaintext data in chunk
-    28 - 4k  ciphertext including trailing poly1305 tag (16 bytes)
+    28 - 4k  ciphertext including trailing 16 byte poly1305 tag
 
 
 ## Extras
@@ -138,9 +161,9 @@ Kinda like epa for PGP-encrypted files.
 
 * This has not been tested with very large files.
 
-* The passphrase is always and only accepted as a command-line option. No
-  silent input is possible.
+* There is no way to specify the argon2 parameters for key generation. They're fixed at
+  the RFC 9106 recommendation.
 
-* The handling of filename is naive.
+* There's no option to compress the data before encrypting.
 
-* There's no option to compress the data.
+* When redirecting the output to stdout, the prompt for passphrase will appear in the output.

@@ -35,10 +35,10 @@
 
 
 (defvar salted--salt-file-utility "~/bin/salt_file"
-  "The location of the salt_file utilty to encrypt and decrypt")
+  "The location of the salt_file utilty to encrypt and decrypt. Set this to your specific location.")
 
 (defvar salted--salt-file-passphrase ""
-  "The passphrase")
+  "The passphrase for encrypting and decrypting")
 
 (defvar salted--saved-position 0 "the position in the file before saving")
 
@@ -49,20 +49,41 @@
 ;;     (call-process-region (point-min) (point-max) salted--salt-file-utility
 ;;                          t t nil "-in" buffer-file-name "-out" "-" "-passphrase" passwd "-decrypt")))
 
-(defun salted-decrypt-buffer (passwd)
-  "decrypt the region"
-  (let ((coding-system-for-write 'no-conversion)
-        (coding-system-for-read 'no-conversion))
+(defun salted-decrypt-buffer (passphrase)
+  "decrypt the full buffer"
+  (let ((coding-system-for-write 'raw-text) ;; no-conversion
+        (coding-system-for-read 'raw-text)) ;; no-conversion
     (call-process-region (point-min) (point-max) salted--salt-file-utility
-                         t t nil "-in" "-" "-out" "-" "-passphrase" passwd "-decrypt")))
+                         t t nil "-in" "-" "-out" "-" "-passphrase" passphrase "-decrypt")))
 
-(defun salted-encrypt-buffer-to-file (passwd)
-  "encrypt the region"
+(defun salted-encrypt-buffer-to-file (passphrase)
+  "encrypt the full buffer to a specific file"
   (message "encrypting to (%s)" buffer-file-name)
-  (let ((coding-system-for-write 'no-conversion)
-        (coding-system-for-read 'no-conversion))
+
+  (let ((coding-system-for-write 'no-conversion) ;; no-conversion
+        (coding-system-for-read 'no-conversion) ;; no-conversion ;; utf-8-unix
+        ;; ========
+        ;; On Windows, I had some trouble directing the output to the
+        ;; buffer and then decrypting. I did not have this problem on
+        ;; MacOS.  This logic uses a temporary file to hold the output
+        ;; from the program, then copies that file to the
+        ;; `buffer-file-name'.
+        (tmp-file (make-temp-file "salted-el-")))
+    (message "using tmp-file (%s)" tmp-file)
+    ;; if the encrypted data has a 0x09 (TAB) char, don't convert to spaces
+    (setq indent-tabs-mode t)
     (call-process-region (point-min) (point-max) salted--salt-file-utility
-                         t t nil "-in" "-" "-out" "-" "-passphrase" passwd)))
+                         t t nil "-in" "-" "-out" tmp-file "-passphrase" passphrase)
+    ;; The file `tmp-file' now contains encrypted contents. Copy it to
+    ;; the file identified by `buffer-file-name'.  Decryption will
+    ;; happen later in the after-save-hook.
+    (copy-file tmp-file buffer-file-name t)
+
+    ;; need to revert the buffer here? not sure.
+    (set-buffer-file-coding-system 'raw-text t) ;; no-conversion
+    (revert-buffer t t t)
+    (delete-file tmp-file)))
+
 
 (define-generic-mode 'salted-file-mode
   (list ?#)
@@ -78,6 +99,7 @@
           (add-hook 'after-save-hook
                     (lambda ()
                       ;;(salted-decrypt-file salted--salt-file-passphrase)
+                      (set-buffer-file-coding-system 'raw-text t) ;; no-conversion
                       (salted-decrypt-buffer salted--salt-file-passphrase)
                       (goto-char salted--saved-position)
                       (set-buffer-modified-p nil)
@@ -85,7 +107,14 @@
                     nil t)
 
           (set (make-local-variable 'salted--salt-file-passphrase) (read-passwd "passphrase: "))
-          (set-buffer-file-coding-system 'no-conversion t)
+          ;;(set (make-local-variable 'salted--salt-file-passphrase) (read-string "passphrase: "))
+          ;; For a list of possible values of
+          ;; CODING-SYSTEM, use M-x list-coding-systems.
+          (set-buffer-file-coding-system 'raw-text t) ;; no-conversion
+
+          ;; If you know exactly what coding system you want to use,
+          ;; just set the variable ‘buffer-file-coding-system’ directly.
+
           (salted-decrypt-buffer salted--salt-file-passphrase)
           (goto-char (point-min))
           (set (make-local-variable 'salted--saved-position) (point))
