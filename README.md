@@ -22,6 +22,16 @@ go build  salt_file.go
 
 You should get an executable for your platform.
 
+## Tests
+
+There are no tests for the command-line utility.  There is one test for the library.
+```
+cd lib
+go test
+
+```
+
+
 ## Using the tool
 
 To encrypt:
@@ -84,7 +94,7 @@ If you omit the `-passphrase`  option, you will be prompted at the terminal.
 
 This tool uses [secretbox](https://pkg.go.dev/golang.org/x/crypto/nacl/secretbox) for the storage. Secretbox uses XSalsa20 and Poly1305 to encrypt and authenticate messages with secret-key cryptography.
 
-The tool generates secret keys from passphrases using Argon2id via the [argon2](https://pkg.go.dev/golang.org/x/crypto/argon2#pkg-overview) package, which implements Argon2 as described in [IETF RFC 9106](https://datatracker.ietf.org/doc/html/rfc9106).
+The tool generates secret keys from passphrases using Argon2id via the [argon2](https://pkg.go.dev/golang.org/x/crypto/argon2#pkg-overview) package, which implements Argon2 as described in [IETF RFC 9106](https://datatracker.ietf.org/doc/html/rfc9106). The argon parameters are: lanes: 4, memoryLimit 2GiB, timeLimit: 1. This makes it sort of slow to encrypt - specifically during key generation.
 
 When encrypting:
 
@@ -167,5 +177,7 @@ Kinda like epa for PGP-encrypted files.
 * When decrypting, the tool does not check the argon2 parameters for sanity.
 
 * There's no option to compress the data before encrypting.
+
+* There's no option to specify the Argon2id parameters for generating keys.
 
 * When redirecting the output to stdout, the prompt for passphrase will appear in the output.

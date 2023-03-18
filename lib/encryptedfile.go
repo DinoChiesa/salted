@@ -1,4 +1,4 @@
-package lib
+package saltedlib
 
 import (
   "golang.org/x/crypto/nacl/secretbox"
@@ -228,7 +228,7 @@ func (ef *EncryptedFile) readHeader() (error) {
   version2bytes := []byte{0x00, 0x02 }
   if bytes.Compare(assertedVersion, version1bytes) == 0 {
 		if ef.Verbose {
-			fmt.Printf("version 1 header\n", ef.nonceBase)
+			fmt.Print("version 1 header\n")
 		}
 		// 24-byte nonce base for this file
 		copy(ef.nonceBase[:], headerchunk[4:28])
@@ -252,7 +252,7 @@ func (ef *EncryptedFile) readHeader() (error) {
 
   } else if bytes.Compare(assertedVersion, version2bytes) == 0 {
 		if ef.Verbose {
-			fmt.Printf("version 2 header\n", ef.nonceBase)
+			fmt.Print("version 2 header\n")
 		}
 		// 24-byte nonce base for this file
 		copy(ef.nonceBase[:], headerchunk[4:28])

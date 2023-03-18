@@ -4,7 +4,7 @@ import (
   "fmt"
   "flag"
 	"syscall"
-	"github.com/DinoChiesa/salted/lib"
+	salted "github.com/DinoChiesa/salted/lib"
 	"golang.org/x/term"
 )
 
@@ -46,7 +46,7 @@ func main() {
 
   if *outfilePtr == "" {
 		// select a default output filename based on the desired action
-		outfilename = lib.DeriveOutputFilename(infilename, *decryptPtr)
+		outfilename = salted.DeriveOutputFilename(infilename, *decryptPtr)
 		if *verbosePtr {
 			fmt.Printf("using output file: %s\n", outfilename)
 		}
@@ -54,12 +54,12 @@ func main() {
 		outfilename = *outfilePtr
 	}
 
-	var ef *lib.EncryptedFile
+	var ef *salted.EncryptedFile
 	var e error
   if *decryptPtr {
-    ef, e = lib.ReadAndDecrypt(infilename, outfilename, passphrase, *verbosePtr)
+    ef, e = salted.ReadAndDecrypt(infilename, outfilename, passphrase, *verbosePtr)
   } else {
-    ef, e = lib.ReadAndEncrypt(infilename, outfilename, passphrase, *verbosePtr)
+    ef, e = salted.ReadAndEncrypt(infilename, outfilename, passphrase, *verbosePtr)
   }
   if e != nil {
 		fmt.Println(e)
